@@ -1,0 +1,14 @@
+[package]
+name = "meta_decoder"
+version = "0.1.0"
+edition = "2021"
+authors = ["Tricster"]
+license = "MIT"
+
+[package.metadata.rust-analyzer]
+rustc_private = true
+
+[profile.release]
+opt-level = "z"
+
+[dependencies]
