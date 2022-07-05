@@ -12,3 +12,4 @@ rustc_private = true
 opt-level = "z"
 
 [dependencies]
+clap = { version = "3.2.8", features = ["derive"] }
