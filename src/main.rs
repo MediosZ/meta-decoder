@@ -11,10 +11,16 @@ struct Args {
 fn main() {
     let args = Args::parse();
     let rlib_path = args.path;
-    if rlib_path.extension().expect("Unable to get extension.") == "rlib" {
-        println!("processing rlib: {:?}", rlib_path);
-        process(&rlib_path);
-    } else {
-        eprintln!("can not recognize the file");
+    match rlib_path
+        .extension()
+        .expect("Unable to get extension.")
+        .to_str()
+        .expect("unable to convert OsStr to str")
+    {
+        "rlib" | "so" => {
+            println!("processing rlib: {:?}", rlib_path);
+            process(&rlib_path);
+        }
+        _ => eprintln!("can not recognize the file"),
     }
 }

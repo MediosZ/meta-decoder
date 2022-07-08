@@ -37,15 +37,19 @@ fn run_compiler(at_args: &[String]) -> interface::Result<()> {
         dbg!(name);
         dbg!(entry);
     }
+    let code = "extern crate package; \n
+fn main() {
+
+}";
     let config = interface::Config {
         opts: sopts,
         crate_cfg: FxHashSet::default(),
         input: Input::Str {
             name: rustc_span::FileName::Custom("dummy".into()),
-            input: "extern crate package;".into(),
+            input: code.into(),
         },
         input_path: None,
-        output_file: None,
+        output_file: Some("./main".into()),
         output_dir: None,
         file_loader: None,
         diagnostic_output: DiagnosticOutput::Default,
@@ -149,7 +153,7 @@ pub fn process(path: &Path) {
     let mut args: Vec<String> = args.drain(1..).collect();
     args.push("--sysroot".into());
     args.push(sysroot.into());
-    args.push("--crate-type=lib".into());
+    // args.push("--crate-type=lib".into());
     args.push("--extern".into());
     args.push(format!(
         "package={}",
@@ -162,5 +166,5 @@ pub fn process(path: &Path) {
         process::exit(1);
     }
     // cleanup
-    std::fs::remove_file("./librust_out.rlib").expect("unable to cleanup dummy lib");
+    // std::fs::remove_file("./librust_out.rlib").expect("unable to cleanup dummy lib");
 }
