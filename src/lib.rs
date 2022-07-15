@@ -79,26 +79,29 @@ fn main() {
             queries.global_ctxt()?.peek_mut().enter(|ctxt| {
                 let name = ctxt.crate_name(crate_num);
                 println!("processing crate: {name}");
+                for child in ctxt.item_children(crate_num.as_def_id()) {
+                    let Export {
+                        ident, res, vis, ..
+                    } = child;
 
-                let children = c_store.item_children_untracked(crate_num.as_def_id(), ctxt.sess);
-                for child in children {
-                    println!("--------------------------");
-                    let Export { res, .. } = child;
-                    dbg!(child);
                     match res {
                         Res::Def(DefKind::Struct, def_id) => {
-                            let _field_names =
-                                c_store.struct_field_names_untracked(def_id, ctxt.sess);
-                            let _field_visibilities =
-                                c_store.struct_field_visibilities_untracked(def_id);
                             // get fields
-                            let fields = c_store.item_children_untracked(def_id, ctxt.sess);
-                            dbg!(fields);
+                            for field in ctxt.item_children(*def_id) {
+                                dbg!(field);
+                            }
+                            // get methods
+                            for inherent_impl in ctxt.inherent_impls(*def_id) {
+                                for method in ctxt.item_children(*inherent_impl) {
+                                    dbg!(method);
+                                }
+                            }
                         }
                         Res::Def(DefKind::Fn, def_id) => {
-                            let fn_sig = ctxt.fn_sig(def_id);
+                            // https://doc.rust-lang.org/stable/nightly-rustc/rustc_middle/ty/struct.Binder.html
+                            let fn_sig = ctxt.fn_sig(*def_id);
                             dbg!(fn_sig);
-                            let names = ctxt.fn_arg_names(def_id);
+                            let names = ctxt.fn_arg_names(*def_id);
                             let inputs = fn_sig.inputs().skip_binder();
                             for (name, ty) in zip(names, inputs) {
                                 let real_name = name.to_string();
@@ -119,6 +122,13 @@ fn main() {
                             }
                         }
                         _ => {}
+                    }
+                }
+                // after parsing all structs, parse tarit implementations.
+                for trait_impl in ctxt.all_trait_implementations(crate_num) {
+                    let _def_id_of_struct = trait_impl.1;
+                    for func in ctxt.item_children(trait_impl.0) {
+                        dbg!(func);
                     }
                 }
             });
