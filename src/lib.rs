@@ -1,9 +1,6 @@
 #![feature(rustc_private)]
-#![feature(once_cell)]
 // allow us to match& on Box<T>s:
 #![feature(box_patterns)]
-#![feature(let_else)]
-#![feature(iter_zip)]
 
 extern crate rustc_ast;
 extern crate rustc_driver;
@@ -17,10 +14,8 @@ use rustc_driver::{args, diagnostics_registry, handle_options};
 use rustc_hash::FxHashSet;
 use rustc_hir::def::{DefKind, Res};
 use rustc_interface::interface;
-use rustc_middle::hir::exports::Export;
-use rustc_middle::ty::TyKind;
+use rustc_middle::metadata::ModChild;
 use rustc_session::config::{self, Input};
-use rustc_session::DiagnosticOutput;
 use std::default::Default;
 use std::env;
 use std::iter::zip;
@@ -33,10 +28,10 @@ fn run_compiler(at_args: &[String]) -> interface::Result<()> {
     let Some(matches) = handle_options(&args) else { return Ok(()) };
     let sopts = config::build_session_options(&matches);
     // externs
-    for (name, entry) in sopts.externs.iter() {
-        dbg!(name);
-        dbg!(entry);
-    }
+    // for (name, entry) in sopts.externs.iter() {
+    //     dbg!(name);
+    //     dbg!(entry);
+    // }
     let code = "extern crate package; \n
 fn main() {
 
@@ -48,87 +43,88 @@ fn main() {
             name: rustc_span::FileName::Custom("dummy".into()),
             input: code.into(),
         },
-        input_path: None,
         output_file: Some("./main".into()),
         output_dir: None,
         file_loader: None,
-        diagnostic_output: DiagnosticOutput::Default,
         lint_caps: Default::default(),
         parse_sess_created: None,
         register_lints: None,
         override_queries: None,
         make_codegen_backend: None,
         registry: diagnostics_registry(),
-        stderr: None,
+        crate_check_cfg: Default::default(),
+        locale_resources: Default::default(),
     };
 
     interface::run_compiler(config, |compiler| {
         let linker = compiler.enter(|queries| {
-            let (crate_num, c_store) =
-                queries
-                    .expansion()?
-                    .peek_mut()
-                    .1
-                    .borrow_mut()
-                    .access(|resolver| {
-                        let c_store = resolver.cstore().clone();
-                        let extern_crate = c_store.crates_untracked().last().cloned().unwrap();
-                        (extern_crate, c_store)
-                    });
+            // get crate_num
+            queries.parse().unwrap();
+            queries.global_ctxt().unwrap().enter(|tcx| tcx.resolver_for_lowering(()));
 
-            queries.global_ctxt()?.peek_mut().enter(|ctxt| {
-                let name = ctxt.crate_name(crate_num);
+            let cnum = queries.global_ctxt().unwrap().enter(|tcx| {
+                tcx.crates(()).last().clone().unwrap()
+            });
+            // dbg!(cnum);
+
+            queries.global_ctxt().unwrap().enter(|ctxt| {
+                let name = ctxt.crate_name(*cnum);
                 println!("processing crate: {name}");
-                for child in ctxt.item_children(crate_num.as_def_id()) {
-                    let Export {
+                for child in ctxt.module_children(cnum.as_def_id()) {
+                    let ModChild {
                         ident, res, vis, ..
                     } = child;
-
+                    dbg!(res);
+                    // dbg!(ident);
                     match res {
                         Res::Def(DefKind::Struct, def_id) => {
                             // get fields
-                            for field in ctxt.item_children(*def_id) {
-                                dbg!(field);
+                            for item in ctxt.associated_item_def_ids(def_id){
+                                // dbg!(item);
+                                let name = ctxt.item_name(*item);
+                                let ty = ctxt.type_of(*item).skip_binder();
+                                dbg!(name);
+                                dbg!(ty);
                             }
                             // get methods
-                            for inherent_impl in ctxt.inherent_impls(*def_id) {
-                                for method in ctxt.item_children(*inherent_impl) {
-                                    dbg!(method);
+                            for inherent_impl in ctxt.inherent_impls(def_id) {
+                                dbg!(inherent_impl);
+                                for method in ctxt.associated_item_def_ids(*inherent_impl) {
+                                    let fn_sig = ctxt.fn_sig(*method).skip_binder().skip_binder();
+                                    dbg!(fn_sig);
                                 }
                             }
                         }
                         Res::Def(DefKind::Fn, def_id) => {
-                            // https://doc.rust-lang.org/stable/nightly-rustc/rustc_middle/ty/struct.Binder.html
+                            // https://doc.rust-lang.org/stable/nightly-rustc/rustc_middle/ty/subst/struct.EarlyBinder.html
                             let fn_sig = ctxt.fn_sig(*def_id);
-                            dbg!(fn_sig);
+                            // dbg!(fn_sig);
                             let names = ctxt.fn_arg_names(*def_id);
-                            let inputs = fn_sig.inputs().skip_binder();
+                            let inputs = fn_sig.skip_binder().inputs().skip_binder();
                             for (name, ty) in zip(names, inputs) {
                                 let real_name = name.to_string();
                                 let ty_name = ty.to_string();
                                 println!("function arg: {} : {}", real_name, ty_name);
-                                dbg!(ty.kind());
+                                // dbg!(ty.kind());
                             }
-                            let output = fn_sig.output().skip_binder();
-                            match output.kind() {
-                                TyKind::Tuple(arg) => {
-                                    if arg.len() == 0 {
-                                        println!("default return");
-                                    } else {
-                                        let _ret = arg[0].unpack();
-                                    }
-                                }
-                                _ => {}
+                            let output = fn_sig.skip_binder().output().skip_binder();
+                            println!("function output: {}", output);
+                        }
+                        Res::Def(DefKind::Trait, def_id) => {
+                            for item in ctxt.associated_item_def_ids(def_id){
+                                dbg!(item);
                             }
+
                         }
                         _ => {}
                     }
                 }
                 // after parsing all structs, parse tarit implementations.
-                for trait_impl in ctxt.all_trait_implementations(crate_num) {
-                    let _def_id_of_struct = trait_impl.1;
-                    for func in ctxt.item_children(trait_impl.0) {
-                        dbg!(func);
+                for trait_impl in ctxt.trait_impls_in_crate(*cnum) {
+                    dbg!(trait_impl);
+                    for func in ctxt.associated_item_def_ids(trait_impl) {
+                        let fn_sig = ctxt.fn_sig(*func).skip_binder().skip_binder();
+                        dbg!(fn_sig);
                     }
                 }
             });
